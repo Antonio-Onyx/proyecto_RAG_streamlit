@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-from rag_logic import get_llm_client
+from client_llm_logic import get_llm_client
 
 load_dotenv()
 
