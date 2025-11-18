@@ -1,0 +1,9 @@
+# ignoramos el entorno de desarollo
+/rag_libs/
+# ignoramos variables de entorno y secretos
+.env
+# ignoramos los archivos construidos (el indice)
+/faiss_index/
+# ignoramos carpetas de cache de python
+__pycache__/
+*.pyc
