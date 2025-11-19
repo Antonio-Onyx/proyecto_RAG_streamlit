@@ -43,7 +43,3 @@ def vector_store(embeddings: HuggingFaceEmbeddings, documents: list) -> FAISS:
     ids = vector_store_obj.add_documents(documents=documents)
 
     return vector_store_obj
-
-if __name__ == "__main__":
-    result = process_document("./data/en_las_montañas_de_la_locura.pdf")
-    print(f"Type: {type(result)}")
