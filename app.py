@@ -6,7 +6,7 @@ import streamlit as st
 
 load_dotenv()
 
-st.title("RAG")
+st.title(":rainbow[RAG]")
 st.subheader("chat with your own documents")
 
 API_HOST = os.getenv("API_HOST", "groq").lower()
@@ -26,6 +26,16 @@ try:
     #    print(token, end="", flush=True)
 except Exception as e:
     print(f"\n[ERROR] an error occured: {e}")
+
+# config side bar to upload documents
+with st.sidebar:
+    st.header("📄 Your Documents")
+    uploaded_files = st.file_uploader("Upload your documents here", type=["pdf", "txt"])
+
+    if uploaded_files:
+        st.success(f"Document '{uploaded_files.name}' loaded")
+
+        # here we will process the document with RAG logic
 
 
 # inizializate chat history
