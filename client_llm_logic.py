@@ -2,8 +2,11 @@ import os
 from abc import ABC, abstractmethod
 from dotenv import load_dotenv
 
+load_dotenv()
+
 # by default we use groq
 from groq import Groq
+from openai import OpenAI
 
 # additional import for another clients can be added here
 try:
@@ -18,6 +21,32 @@ class BaseLLMClient(ABC):
         must be a generator (use 'yield) that returns content chunks
         """ 
         pass
+
+class OpenAIClient(BaseLLMClient):
+    def __init__(self, api_key: str):
+        self.client = OpenAI(api_key=api_key)
+        print("OpenAIClient initialized")
+
+    def generate_content(self, prompt: str, model_name: str):
+        message = [
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+
+        try:
+            response = self.client.chat.completions.create(
+                messages=message,
+                model=model_name,
+                stream=True
+            )
+            for chunk in response:
+                if chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        except Exception as e:
+            print(f"Error generating content with OpenAI Client: {e}")
+            yield f"Error: {e}"
 
 class GroqClient(BaseLLMClient):
     def __init__(self, api_key: str):

@@ -1,10 +1,11 @@
 import os
 import tempfile
 from dotenv import load_dotenv
-from client_llm_logic import get_llm_client
 from RAG_modules_logic import process_document
 
 from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
@@ -16,32 +17,33 @@ load_dotenv()
 st.title(":rainbow[RAG]")
 st.subheader("chat with your own documents")
 
-API_HOST = os.getenv("API_HOST", "groq").lower()
+API_HOST = os.getenv("API_HOST", "openai").lower()
 
 if API_HOST == "groq":
-    MODEL_TO_USE = "openai/gpt-oss-120b"
+    llm = ChatGroq(
+        model="llama-3.3-70b-versatile",
+        api_key=os.getenv("GROQ_API_KEY"),
+        temperature=0.8,
+        max_retries=2,
+    )
 elif API_HOST == "gemini":
-    MODEL_TO_USE = "gemini-2.5-flash"
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-2.0-flash",
+        api_key=os.getenv("GEMINI_API_KEY"),
+        temperature=0.8,
+    )
+elif API_HOST == "openai":
+    llm = ChatOpenAI(
+        model="gpt-5.4-nano",
+        api_key=os.getenv("OPENAI_API_KEY"),
+        temperature=0.8,
+        max_retries=2,
+    )
+else:
+    st.error(f"API_HOST {API_HOST} no reconocido. Usa: groq, gemini, openai")
+    st.stop()
 
-
-try:
-    client = get_llm_client()
-    print(f"Using {API_HOST} client with model: {MODEL_TO_USE}")
-    #full_story = ""
-    #for token in response:
-    #    full_story += token
-    #    print(token, end="", flush=True)
-except Exception as e:
-    print(f"\n[ERROR] an error occured: {e}")
-
-
-llm = ChatGroq(
-    model=MODEL_TO_USE,
-    api_key=os.getenv("GROQ_API_KEY"),
-    temperature = 0.8,
-    max_tokens=None,
-    max_retries=2,
-)
+st.sidebar.caption(f"Modelo activo: {API_HOST} -- {llm.model_name}")
 
 # config side bar to upload documents
 with st.sidebar:
@@ -50,7 +52,8 @@ with st.sidebar:
 
     if uploaded_files:
         # we need create a temporal directory to store the uploaded files
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+        suffix = os.path.splitext(uploaded_files.name)[1]
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
             tmp_file.write(uploaded_files.read())
             # save the path of the temporal file
             tmp_file_path = tmp_file.name
@@ -67,6 +70,8 @@ with st.sidebar:
                     st.session_state.last_uploaded = uploaded_files.name
                     st.success("Vectorial database created successfully.")
                 except Exception as e:
+                    st.error(f"Error processing document: {e}")
+                finally:
                     os.remove(tmp_file_path)
         else:
             st.info("Data already loaded to chat")
@@ -107,6 +112,14 @@ if prompt := st.chat_input("What is up?"):
             template = """ Contesta la pregunta solo basandote en el contexto proporcionado:
             {context}
 
+            Reglas de formato:
+            - Para fórmulas matemáticas inline usa $...$ (ejemplo: $x^2 + y^2 = z^2$)
+            - Para fórmulas en bloque usa $$...$$ en una línea separada
+            - No uses notación de paréntesis como \\( ... \\) ni corchetes \\[ ... \\]
+            
+            Contexto:
+            {context}
+
             Pregunta: {question}
             """
 
@@ -128,9 +141,9 @@ if prompt := st.chat_input("What is up?"):
         try:
             for chunk in stream_handler:
                 full_response += chunk
-                message_placeholder.markdown(full_response + " ")
+                message_placeholder.markdown(full_response + " ", unsafe_allow_html=True)
             
-            message_placeholder.markdown(full_response)
+            message_placeholder.markdown(full_response, unsafe_allow_html=True)
 
             st.session_state.messages.append({
                 "role": "assistant",
