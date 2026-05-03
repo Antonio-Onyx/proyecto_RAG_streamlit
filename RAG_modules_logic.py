@@ -1,21 +1,30 @@
-from langchain_text_splitters import CharacterTextSplitter
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
 import pymupdf4llm # to load pdf documents (instead of pypdf)
 from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
-from langchain_core.documents import Document
-from langchain_community.document_loaders import PyPDFLoader
 from langchain_huggingface import HuggingFaceEmbeddings
 import faiss
 from langchain_community.vectorstores import FAISS
 from langchain_community.docstore.in_memory import InMemoryDocstore
 
-def process_document(document: str) -> FAISS:
+from langchain_community.vectorstores import SupabaseVectorStore
+from supabase import create_client, Client
+
+
+supabase_url = os.getenv("SUPABASE_URL")
+supabase_key = os.getenv("SUPABASE_KEY")
+supabase: Client = create_client(supabase_url, supabase_key)
+
+def process_document(document: str) -> SupabaseVectorStore:
     """
     RAG chain logic to process document
     """
     chunks = text_splitter(document) #chunks -> embeddings
     embeddings = generate_embeddings() # embeddings -> vector store
     db = vector_store(embeddings=embeddings, documents=chunks) #vector store -> ids
-    return db
+    return db, embeddings
 
 def text_splitter(document: str) -> list:
 
@@ -42,20 +51,31 @@ def text_splitter(document: str) -> list:
     return chunks
 
 def generate_embeddings() -> HuggingFaceEmbeddings:
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    embeddings = HuggingFaceEmbeddings(
+        model_name="BAAI/bge-m3",
+        model_kwargs={"device": "cuda"},
+        encode_kwargs={"normalize_embeddings": True}
+    )
     return embeddings
 
-def vector_store(embeddings: HuggingFaceEmbeddings, documents: list) -> FAISS:
-    dim_sample = embeddings.embed_query("Hello world")
-    embedding_dim = len(dim_sample)
-    index = faiss.IndexFlatL2(embedding_dim)
-
-    vector_store_obj = FAISS(
-        embedding_function=embeddings,
-        index=index,
-        docstore=InMemoryDocstore(), # al docs save in memory ram
-        index_to_docstore_id={}
+def vector_store(embeddings: HuggingFaceEmbeddings, documents: list) -> SupabaseVectorStore:
+    db = SupabaseVectorStore.from_documents(
+        documents=documents,
+        embedding=embeddings,
+        client=supabase,
+        table_name='documents',
+        query_name="match_documents",
+        chunk_size=500,
     )
-    ids = vector_store_obj.add_documents(documents=documents)
+    return db
 
-    return vector_store_obj
+def load_existing_vector_store(embeddings: HuggingFaceEmbeddings) -> SupabaseVectorStore:
+    """
+    In case you want to load an existing vector store from db
+    """
+    return SupabaseVectorStore(
+        embedding=embeddings,
+        client=supabase,
+        table_name='documents',
+        query_name="match_documents",
+    )

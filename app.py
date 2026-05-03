@@ -9,10 +9,47 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
+from langchain_huggingface import HuggingFaceEmbeddings
+
+from langchain_core.retrievers import BaseRetriever
+from langchain_core.documents import Document
+from pydantic import Field
+from supabase import create_client, Client
 
 import streamlit as st
 
 load_dotenv()
+
+class SuapBaseRetriver(BaseRetriever):
+    embeddings: HuggingFaceEmbeddings
+    supabase_client: any = Field(exclude=True)
+    k: int = 5
+
+    def _get_relevant_documents(self, query: str) -> list[Document]:
+        query_embedding = self.embeddings.embed_query(query)
+        result = self.supabase_client.rpc(
+            "match_documents",
+            {
+                'query_embedding': query_embedding,
+                'match_count': self.k,
+                'filter': {},
+            }
+        ).execute()
+
+        docs = []
+
+        for row in result.data:
+            docs.append(Document(
+                page_content=row['content'],
+                metadata=row['metadata'],
+            ))
+
+        return docs
+    
+supabase: Client = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_KEY")
+)
 
 st.title(":rainbow[RAG]")
 st.subheader("chat with your own documents")
@@ -64,9 +101,10 @@ with st.sidebar:
         if "db" not in st.session_state or st.session_state.get("last_uploaded") != uploaded_files.name:
             with st.spinner("Processing document..."):
                 try:
-                    db = process_document(tmp_file_path)
+                    db, embeddings = process_document(tmp_file_path)
 
                     st.session_state.db = db
+                    st.session_state.embeddings = embeddings
                     st.session_state.last_uploaded = uploaded_files.name
                     st.success("Vectorial database created successfully.")
                 except Exception as e:
@@ -106,8 +144,10 @@ if prompt := st.chat_input("What is up?"):
         
         # check if RAG exists
         if "db" in st.session_state:
-            db = st.session_state.db
-            retriever = db.as_retriever(search_kwargs={"k":5})
+            retriever = SuapBaseRetriver(
+                embeddings=st.session_state.embeddings,
+                supabase_client=supabase
+            )
 
             template = """ Contesta la pregunta solo basandote en el contexto proporcionado:
             {context}
